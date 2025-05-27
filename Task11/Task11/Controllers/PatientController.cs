@@ -18,10 +18,7 @@ public class PatientController : ControllerBase
     public async Task<IActionResult> GetPatient(int id, CancellationToken cancellationToken)
     {
         var patient = await _patientService.GetPatientByIdAsync(id, cancellationToken);
-        if (patient != null)
-        {
-            return Ok(patient);
-        }
-        return NotFound($"Patient with ID {id} not found");
+        
+        return Ok(patient);
     }
 }

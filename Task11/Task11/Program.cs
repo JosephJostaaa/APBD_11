@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Task11.Data;
+using Task11.Repositories;
+using Task11.Repositories.abstr;
+using Task11.Service;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +12,15 @@ builder.Services.AddOpenApi();
 builder.Services.AddDbContext<HospitalDbContext>(options => 
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default"))
 );
+builder.Services.AddControllers();
+builder.Services.AddScoped<IDoctorRepository, DoctorRepository>();
+builder.Services.AddScoped<IPatientRepository, PatientRepository>();
+builder.Services.AddScoped<IMedicamentRepository, MedicamentRepository>();
+builder.Services.AddScoped<IPrescriptionRepository, PrescriptionRepository>();
+builder.Services.AddScoped<IPrescriptionMedicamentRepository, PrescriptionMedicamentRepository>();
+builder.Services.AddScoped<IPrescriptionService, PrescriptionService>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IPatientService, PatientService>();
 
 var app = builder.Build();
 
@@ -21,29 +33,5 @@ if (app.Environment.IsDevelopment())
 
 
 app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-    {
-        var forecast = Enumerable.Range(1, 5).Select(index =>
-                new WeatherForecast
-                (
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                    Random.Shared.Next(-20, 55),
-                    summaries[Random.Shared.Next(summaries.Length)]
-                ))
-            .ToArray();
-        return forecast;
-    })
-    .WithName("GetWeatherForecast");
-
+app.MapControllers();
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

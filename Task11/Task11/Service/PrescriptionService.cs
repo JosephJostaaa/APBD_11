@@ -1,18 +1,29 @@
-﻿using Microsoft.VisualBasic;
-using Task11.Data;
+﻿using Task11.Data;
 using Task11.Dto;
 using Task11.Model;
+using Task11.Repositories.abstr;
 
 namespace Task11.Service;
 
 public class PrescriptionService : IPrescriptionService
 {
-    private readonly HospitalDbContext _context;
-    public PrescriptionService(HospitalDbContext context)
+    private readonly IPatientRepository _patientRepository;
+    private readonly IDoctorRepository _doctorRepository;
+    private readonly IMedicamentRepository _medicamentRepository;
+    private readonly IPrescriptionRepository _prescriptionRepository;
+    private readonly IPrescriptionMedicamentRepository _prescriptionMedicamentRepository;
+    private readonly IUnitOfWork _unitOfWork;
+
+    public PrescriptionService(IPatientRepository patientRepository, IDoctorRepository doctorRepository, IMedicamentRepository medicamentRepository, IPrescriptionRepository prescriptionRepository, IPrescriptionMedicamentRepository prescriptionMedicamentRepository, IUnitOfWork unitOfWork)
     {
-        _context = context;
+        _patientRepository = patientRepository;
+        _doctorRepository = doctorRepository;
+        _medicamentRepository = medicamentRepository;
+        _prescriptionRepository = prescriptionRepository;
+        _prescriptionMedicamentRepository = prescriptionMedicamentRepository;
+        _unitOfWork = unitOfWork;
     }
-    
+
     public async Task<bool> CreatePrescription(PrescriptionDto prescription, CancellationToken cancellationToken)
     {
         if (prescription.DueDate < prescription.Date)
@@ -24,8 +35,9 @@ public class PrescriptionService : IPrescriptionService
         {
             throw new Exception("Number of medicaments cannot be more than 10");
         }
-        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-        var patient = _context.Patients.FirstOrDefault(p => p.IdPatient == prescription.patient.IdPatient);
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        var patient = await _patientRepository.GetPatientByIdAsync(prescription.patient.IdPatient, cancellationToken);
+        
         if (patient == null)
         {
             patient = new Patient
@@ -35,43 +47,39 @@ public class PrescriptionService : IPrescriptionService
                 LastName = prescription.patient.LastName,
                 BirthDate = prescription.patient.BirthDate
             };
-            _context.Patients.Add(patient);
+            await _patientRepository.AddPatientAsync(patient, cancellationToken);
         }
-        var doctor = _context.Doctors.FirstOrDefault(d => d.IdDoctor == prescription.IdDoctor);
+        var doctor = _doctorRepository.FindDoctorByIdAsync(prescription.IdDoctor, cancellationToken).Result;
         if (doctor == null)
         {
             return false;
         }
-        var medicaments = _context.Medicaments
-            .Where(m => prescription.medicaments.Any(pm => pm.IdMedicament == m.IdMedicament))
-            .ToList();
+        var medicaments = await _medicamentRepository.FindAllByIdAsync(prescription.medicaments.Select(m => m.IdMedicament).ToList(), cancellationToken);
         if (medicaments.Count != prescription.medicaments.Count)
         {
             throw new Exception("Some medicaments not found");
         }
         
-        var result = _context.Prescriptions.Add(new Prescription
+        Prescription result = await _prescriptionRepository.CreatePrescriptionAsync(new Prescription
         {
             Patient = patient,
             IdDoctor = prescription.IdDoctor,
             Date = prescription.Date,
             DueDate = prescription.DueDate
-        });
+        }, cancellationToken);
         
         foreach (var medicament in prescription.medicaments)
         {
             var prescriptionMedicament = new PrescriptionMedicament
             {
-                IdPrescription = result.Entity.IdPrescription,
+                IdPrescription = result.IdPrescription,
                 IdMedicament = medicament.IdMedicament,
                 Dose = medicament.Dose,
                 Details = medicament.Details
             };
-            _context.PrescriptionMedicaments.Add(prescriptionMedicament);
+            await _prescriptionMedicamentRepository.AddAsync(prescriptionMedicament, cancellationToken);
         }
-        await _context.SaveChangesAsync(cancellationToken);
-        
-        await transaction.CommitAsync(cancellationToken);
+        await _unitOfWork.CommitTransactionAsync(cancellationToken);
         
         return true;
     }
